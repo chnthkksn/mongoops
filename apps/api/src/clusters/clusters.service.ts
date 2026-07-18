@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { MongoClient } from 'mongodb';
 import { Cluster } from './cluster.schema';
 import { CreateClusterDto } from './dto/create-cluster.dto';
+import { UpdateClusterDto } from './dto/update-cluster.dto';
 import { encryptSecret, decryptSecret } from '../common/crypto.util';
 import { AuditLogService } from '../audit/audit-log.service';
 
@@ -49,6 +50,54 @@ export class ClustersService {
       throw new NotFoundException('Cluster not found');
     }
     return cluster;
+  }
+
+  async update(
+    orgId: string,
+    id: string,
+    dto: UpdateClusterDto,
+    actor: { id: string; name: string },
+  ) {
+    const cluster = await this.findOne(orgId, id);
+
+    if (dto.name !== undefined) cluster.name = dto.name;
+    if (dto.topology !== undefined) cluster.topology = dto.topology;
+    if (dto.connectionString !== undefined) {
+      cluster.encryptedConnectionString = encryptSecret(dto.connectionString);
+      // A changed connection string points at a potentially different
+      // target, so the last-known status/node count can't be trusted
+      // until the next test-connection or scheduled metrics poll.
+      cluster.status = 'unknown';
+      cluster.lastCheckedAt = null;
+      cluster.nodeCount = null;
+    }
+    await cluster.save();
+
+    await this.auditLogService.record({
+      orgId,
+      actorUserId: actor.id,
+      actorName: actor.name,
+      action: 'cluster.updated',
+      targetLabel: cluster.name,
+      metadata: { connectionStringChanged: dto.connectionString !== undefined },
+    });
+
+    return cluster;
+  }
+
+  async remove(orgId: string, id: string, actor: { id: string; name: string }) {
+    const cluster = await this.findOne(orgId, id);
+    await this.clusterModel.deleteOne({ _id: id, orgId });
+
+    await this.auditLogService.record({
+      orgId,
+      actorUserId: actor.id,
+      actorName: actor.name,
+      action: 'cluster.deleted',
+      targetLabel: cluster.name,
+    });
+
+    return { ok: true };
   }
 
   async testConnection(orgId: string, id: string) {

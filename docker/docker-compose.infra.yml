@@ -1,0 +1,107 @@
+name: mongoops-infra
+
+services:
+  mongo-keyfile-init:
+    image: mongo:7
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - >
+        [ -f /keyfile/mongo-keyfile ] || openssl rand -base64 756 > /keyfile/mongo-keyfile;
+        chmod 400 /keyfile/mongo-keyfile;
+        chown 999:999 /keyfile/mongo-keyfile
+    volumes:
+      - mongo-keyfile:/keyfile
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command:
+      [
+        "--replSet",
+        "rs0",
+        "--bind_ip_all",
+        "--auth",
+        "--keyFile",
+        "/etc/mongo-keyfile/mongo-keyfile",
+      ]
+    depends_on:
+      mongo-keyfile-init:
+        condition: service_completed_successfully
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-keyfile:/etc/mongo-keyfile:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "-u",
+          "${MONGO_ROOT_USER}",
+          "-p",
+          "${MONGO_ROOT_PASSWORD}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - >
+        mongosh --host mongo:27017 -u ${MONGO_ROOT_USER} -p ${MONGO_ROOT_PASSWORD}
+        --authenticationDatabase admin --quiet --eval
+        "try { rs.status(); } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: '${MONGO_EXTERNAL_HOST}:27017'}]}); }"
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+        mc mb -p local/${MINIO_BUCKET:-mongoops-backups} || true
+
+volumes:
+  mongo-data:
+  mongo-keyfile:
+  minio-data:

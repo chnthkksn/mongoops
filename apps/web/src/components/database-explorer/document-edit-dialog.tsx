@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -79,9 +80,14 @@ export function DocumentEditDialog({
       }}
     >
       <DialogTrigger
-        render={<Button variant="outline" size="sm" className="h-7 px-2.5 text-[12px]" />}
+        render={
+          <button
+            title={canEdit ? "Edit document" : "View document"}
+            className="rounded-[4px] p-1.5 text-muted-foreground hover:bg-neutral-bg hover:text-foreground"
+          />
+        }
       >
-        {canEdit ? "Edit" : "View"}
+        {canEdit ? <Pencil size={14} /> : <Eye size={14} />}
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>

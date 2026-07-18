@@ -1,10 +1,8 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
-import { signOut, useSession } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { UserMenu } from "./user-menu";
 
 export function AppShell({
   title,
@@ -15,9 +13,6 @@ export function AppShell({
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const { data: session } = useSession();
-  const router = useRouter();
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
       <aside className="flex w-[236px] shrink-0 flex-col border-r border-border bg-sidebar p-3">
@@ -34,25 +29,8 @@ export function AppShell({
 
         <SidebarNav />
 
-        <div className="mt-auto flex items-center gap-2 border-t border-border pt-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-bg text-xs font-semibold text-neutral-fg">
-            {session?.user?.name?.[0]?.toUpperCase() ?? "?"}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold">{session?.user?.name}</p>
-            <p className="truncate text-[11px] text-muted-foreground">{session?.user?.email}</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            onClick={async () => {
-              await signOut();
-              router.push("/sign-in");
-            }}
-          >
-            Sign out
-          </Button>
+        <div className="mt-auto">
+          <UserMenu />
         </div>
       </aside>
 

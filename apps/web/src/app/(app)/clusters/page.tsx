@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { AddClusterDialog } from "@/components/shell/add-cluster-dialog";
+import { EditClusterDialog } from "@/components/shell/edit-cluster-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +14,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { authClient } from "@/lib/auth-client";
 import { api, type ClusterDto } from "@/lib/api-client";
 
 export default function ClustersPage() {
+  const { data: activeRole } = authClient.useActiveMemberRole();
+  const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
+
   const [clusters, setClusters] = useState<ClusterDto[] | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [editingCluster, setEditingCluster] = useState<ClusterDto | null>(null);
 
   const load = useCallback(() => {
     api.listClusters().then(setClusters).catch(() => setClusters([]));
@@ -35,6 +41,14 @@ export default function ClustersPage() {
       setTestingId(null);
       load();
     }
+  }
+
+  async function handleDelete(cluster: ClusterDto) {
+    if (!confirm(`Remove "${cluster.name}"? This won't delete any data on the cluster itself.`)) {
+      return;
+    }
+    await api.deleteCluster(cluster._id);
+    load();
   }
 
   return (
@@ -90,21 +104,54 @@ export default function ClustersPage() {
                   <StatusBadge status={cluster.status} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2.5 text-[12px]"
-                    disabled={testingId === cluster._id}
-                    onClick={() => handleTestConnection(cluster._id)}
-                  >
-                    {testingId === cluster._id ? "Testing..." : "Test connection"}
-                  </Button>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-[12px]"
+                      disabled={testingId === cluster._id}
+                      onClick={() => handleTestConnection(cluster._id)}
+                    >
+                      {testingId === cluster._id ? "Testing..." : "Test connection"}
+                    </Button>
+                    {canManage && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2.5 text-[12px]"
+                          onClick={() => setEditingCluster(cluster)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2.5 text-[12px]"
+                          onClick={() => handleDelete(cluster)}
+                        >
+                          Remove
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+
+      {editingCluster && (
+        <EditClusterDialog
+          cluster={editingCluster}
+          open={editingCluster !== null}
+          onOpenChange={(next) => {
+            if (!next) setEditingCluster(null);
+          }}
+          onUpdated={load}
+        />
+      )}
     </AppShell>
   );
 }

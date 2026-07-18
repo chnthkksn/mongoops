@@ -185,7 +185,20 @@ export const api = {
     request<TestConnectionResult>(`/clusters/${id}/test-connection`, {
       method: "POST",
     }),
-  getMetrics: (id: string) => request<MetricSampleDto[]>(`/clusters/${id}/metrics`),
+  updateCluster: (
+    id: string,
+    input: { name?: string; connectionString?: string; topology?: "standalone" | "replicaSet" },
+  ) =>
+    request<ClusterDto>(`/clusters/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteCluster: (id: string) =>
+    request<{ ok: boolean }>(`/clusters/${id}`, { method: "DELETE" }),
+  getMetrics: (id: string, limit?: number) =>
+    request<MetricSampleDto[]>(
+      `/clusters/${id}/metrics${limit ? `?limit=${limit}` : ""}`,
+    ),
   listApiKeys: () => request<ApiKeyDto[]>("/api-keys"),
   createApiKey: (name: string) =>
     request<CreatedApiKeyDto>("/api-keys", {

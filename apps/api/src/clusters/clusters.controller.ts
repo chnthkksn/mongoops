@@ -1,8 +1,21 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { RequireActiveOrg, Session } from '@thallesp/nestjs-better-auth';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import {
+  OrgRoles,
+  RequireActiveOrg,
+  Session,
+} from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { ClustersService } from './clusters.service';
 import { CreateClusterDto } from './dto/create-cluster.dto';
+import { UpdateClusterDto } from './dto/update-cluster.dto';
 
 @Controller('clusters')
 @RequireActiveOrg()
@@ -28,6 +41,31 @@ export class ClustersController {
     return this.clustersService.testConnection(
       session.session.activeOrganizationId!,
       id,
+    );
+  }
+
+  @Patch(':id')
+  @OrgRoles(['owner', 'admin'])
+  update(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Body() dto: UpdateClusterDto,
+  ) {
+    return this.clustersService.update(
+      session.session.activeOrganizationId!,
+      id,
+      dto,
+      { id: session.user.id, name: session.user.name },
+    );
+  }
+
+  @Delete(':id')
+  @OrgRoles(['owner', 'admin'])
+  remove(@Session() session: UserSession, @Param('id') id: string) {
+    return this.clustersService.remove(
+      session.session.activeOrganizationId!,
+      id,
+      { id: session.user.id, name: session.user.name },
     );
   }
 }

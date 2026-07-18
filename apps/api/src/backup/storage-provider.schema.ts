@@ -42,3 +42,5 @@ export class StorageProvider extends Document {
 
 export const StorageProviderSchema =
   SchemaFactory.createForClass(StorageProvider);
+
+StorageProviderSchema.index({ orgId: 1, name: 1 }, { unique: true });

@@ -28,11 +28,53 @@ export class StorageProvidersService {
   ) {}
 
   async list(orgId: string) {
+    await this.ensureDefaultProvider(orgId);
     return this.storageProviderModel
       .find({ orgId })
       .select('-encryptedSecretAccessKey')
       .sort({ createdAt: -1 })
       .exec();
+  }
+
+  // Seeds a MinIO/S3 provider from env vars the first time an org has none
+  // configured yet, so a self-hosted MinIO instance doesn't need to be
+  // re-added through the UI for every org. No-op if the env vars aren't
+  // set, or the org already has at least one provider (manually added or
+  // previously seeded) — deleting all providers re-triggers seeding.
+  private async ensureDefaultProvider(orgId: string) {
+    const endpoint = process.env.DEFAULT_STORAGE_ENDPOINT;
+    const accessKeyId = process.env.DEFAULT_STORAGE_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.DEFAULT_STORAGE_SECRET_ACCESS_KEY;
+    if (!endpoint || !accessKeyId || !secretAccessKey) return;
+
+    const hasAny = await this.storageProviderModel.exists({ orgId });
+    if (hasAny) return;
+
+    try {
+      const provider = await this.storageProviderModel.create({
+        orgId,
+        name: 'Default MinIO',
+        endpoint,
+        region: process.env.DEFAULT_STORAGE_REGION ?? 'us-east-1',
+        bucket: process.env.DEFAULT_STORAGE_BUCKET ?? 'mongoops-backups',
+        accessKeyId,
+        encryptedSecretAccessKey: encryptSecret(secretAccessKey),
+        forcePathStyle:
+          process.env.DEFAULT_STORAGE_FORCE_PATH_STYLE !== 'false',
+        status: 'unknown',
+      });
+      await this.auditLogService.record({
+        orgId,
+        actorUserId: 'system',
+        actorName: 'System',
+        action: 'storage_provider.created',
+        targetLabel: provider.name,
+        metadata: { endpoint: provider.endpoint, bucket: provider.bucket },
+      });
+    } catch {
+      // Duplicate-key race between concurrent requests seeding the same
+      // org at once — harmless, the other request's insert already won.
+    }
   }
 
   async findOne(orgId: string, id: string) {

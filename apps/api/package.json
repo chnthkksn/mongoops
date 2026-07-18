@@ -24,6 +24,7 @@
     "@aws-sdk/lib-storage": "^3.1089.0",
     "@aws-sdk/s3-request-presigner": "^3.1089.0",
     "@better-auth/api-key": "^1.6.23",
+    "@better-auth/passkey": "^1.6.23",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",

@@ -1,0 +1,40 @@
+name: mongoops-cloud
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      MONGO_URL: ${MONGO_URL}
+      AUTH_BASE_URL: ${AUTH_BASE_URL}
+      WEB_ORIGIN: ${WEB_ORIGIN}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      CLUSTER_SECRET_KEY: ${CLUSTER_SECRET_KEY}
+      DEFAULT_STORAGE_ENDPOINT: ${DEFAULT_STORAGE_ENDPOINT}
+      DEFAULT_STORAGE_REGION: ${DEFAULT_STORAGE_REGION}
+      DEFAULT_STORAGE_BUCKET: ${DEFAULT_STORAGE_BUCKET}
+      DEFAULT_STORAGE_ACCESS_KEY_ID: ${DEFAULT_STORAGE_ACCESS_KEY_ID}
+      DEFAULT_STORAGE_SECRET_ACCESS_KEY: ${DEFAULT_STORAGE_SECRET_ACCESS_KEY}
+      DEFAULT_STORAGE_FORCE_PATH_STYLE: ${DEFAULT_STORAGE_FORCE_PATH_STYLE}
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"

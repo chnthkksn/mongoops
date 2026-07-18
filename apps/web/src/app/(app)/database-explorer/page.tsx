@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DocumentEditDialog } from "@/components/database-explorer/document-edit-dialog";
+import { CopyDocumentButton } from "@/components/database-explorer/copy-document-button";
 import { InsertDocumentDialog } from "@/components/database-explorer/insert-document-dialog";
 import { CreateCollectionDialog } from "@/components/database-explorer/create-collection-dialog";
 import { RenameCollectionDialog } from "@/components/database-explorer/rename-collection-dialog";
@@ -469,6 +470,7 @@ export default function DatabaseExplorerPage() {
                                 <JsonTreeView value={doc.parsed} />
                               </div>
                               <div className="flex shrink-0 items-center gap-1">
+                                <CopyDocumentButton raw={doc.raw} />
                                 <DocumentEditDialog
                                   clusterId={selectedClusterId}
                                   db={selectedDb}
@@ -532,6 +534,7 @@ export default function DatabaseExplorerPage() {
                                     ))}
                                   <TableCell className="text-right">
                                     <div className="flex items-center justify-end gap-1">
+                                      <CopyDocumentButton raw={doc.raw} />
                                       <DocumentEditDialog
                                         clusterId={selectedClusterId}
                                         db={selectedDb}

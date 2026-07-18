@@ -35,6 +35,42 @@ export function SecurityCard() {
   const [disableError, setDisableError] = useState<string | null>(null);
   const [disableLoading, setDisableLoading] = useState(false);
 
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  function resetPasswordState() {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError(null);
+  }
+
+  async function onChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordError(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords don't match");
+      return;
+    }
+    setPasswordLoading(true);
+    const { error } = await authClient.changePassword({
+      currentPassword,
+      newPassword,
+      revokeOtherSessions: true,
+    });
+    setPasswordLoading(false);
+    if (error) {
+      setPasswordError(error.message ?? "Could not change password");
+      return;
+    }
+    setPasswordOpen(false);
+    resetPasswordState();
+  }
+
   function resetEnrollState() {
     setStep("password");
     setPassword("");
@@ -102,6 +138,70 @@ export function SecurityCard() {
         <div className="flex items-center justify-between py-3">
           <span className="text-[13px] font-medium">HTTPS</span>
           <span className="text-[12px] text-success-fg">Enabled</span>
+        </div>
+        <div className="flex items-center justify-between py-3">
+          <span className="text-[13px] font-medium">Password</span>
+          <Dialog
+            open={passwordOpen}
+            onOpenChange={(next) => {
+              setPasswordOpen(next);
+              if (!next) resetPasswordState();
+            }}
+          >
+            <DialogTrigger
+              render={<Button variant="outline" size="sm" className="h-7 px-2.5 text-[12px]" />}
+            >
+              Change
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Change password</DialogTitle>
+                <DialogDescription>
+                  Changing your password signs you out of other devices.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={onChangePassword} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="current-password">Current password</Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="new-password">New password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="confirm-password">Confirm new password</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+                {passwordError && <p className="text-sm text-critical-fg">{passwordError}</p>}
+                <DialogFooter>
+                  <Button type="submit" disabled={passwordLoading}>
+                    {passwordLoading ? "Changing..." : "Change password"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
         <div className="flex items-center justify-between py-3">
           <span className="text-[13px] font-medium">Role-based access control</span>

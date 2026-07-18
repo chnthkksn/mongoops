@@ -1,12 +1,16 @@
 import { betterAuth, APIError } from 'better-auth';
 import { organization, twoFactor } from 'better-auth/plugins';
 import { apiKey } from '@better-auth/api-key';
+import { passkey } from '@better-auth/passkey';
 import { MongoClient, Db, ObjectId } from 'mongodb';
 import { mongodbAdapter } from 'better-auth/adapters/mongodb';
 
 const mongoUrl = process.env.MONGO_URL ?? 'mongodb://localhost:27017/mongoops';
 const client = new MongoClient(mongoUrl);
 const db = client.db();
+
+const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
+const rpID = new URL(webOrigin).hostname;
 
 interface WriteAuditLogInput {
   orgId: string;
@@ -36,14 +40,14 @@ async function writeAuditLog(database: Db, input: WriteAuditLogInput) {
 export const auth = betterAuth({
   database: mongodbAdapter(db, { client }),
   baseURL: process.env.AUTH_BASE_URL ?? 'http://localhost:3001',
-  trustedOrigins: [process.env.WEB_ORIGIN ?? 'http://localhost:3000'],
+  trustedOrigins: [webOrigin],
   emailAndPassword: {
     enabled: true,
   },
   plugins: [
     organization({
       sendInvitationEmail(data) {
-        const inviteLink = `${process.env.WEB_ORIGIN ?? 'http://localhost:3000'}/accept-invitation/${data.id}`;
+        const inviteLink = `${webOrigin}/accept-invitation/${data.id}`;
         console.log(
           `[invitation] ${data.email} invited to ${data.organization.name}: ${inviteLink}`,
         );
@@ -145,5 +149,6 @@ export const auth = betterAuth({
     }),
     apiKey({ enableMetadata: true }),
     twoFactor(),
+    passkey({ rpID, rpName: 'MongoOps Cloud' }),
   ],
 });

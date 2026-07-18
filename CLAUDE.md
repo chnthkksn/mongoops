@@ -44,16 +44,20 @@ pnpm test:e2e        # jest e2e (api only, apps/api/test/jest-e2e.json)
 pnpm exec jest <path-to-spec>   # run a single test file (api)
 ```
 
-### Local infra
+### Docker
+
+Infra (Mongo + MinIO) and the app (api + web) are two independently deployable compose stacks under `docker/`, not the repo root — there is no local containerized dev setup. Mongo/MinIO run once on a VPS via `docker-compose.infra.yml`; `apps/api/.env`'s `MONGO_URL` and the in-app storage-provider config point at that VPS rather than `localhost`.
 
 ```bash
-docker compose up -d          # mongo (replSet rs0) + mongo-init + minio + minio-init
+cd docker && docker compose -f docker-compose.infra.yml up -d   # standalone mongo+minio, auth required, no api/web
+cd docker && docker compose up -d --build                       # app only: api + web, points at the infra stack via MONGO_URL
 ```
 
-- Mongo: `mongodb://localhost:27017/mongoops?replicaSet=rs0` — a replica set is **required**, not optional: better-auth needs transactions.
-- MinIO (S3-compatible, backs the Backup feature): `http://localhost:9000`, console `:9001`, creds `minioadmin`/`minioadmin`, bucket `mongoops-backups`, path-style required.
-- Env vars: `apps/api/.env.example` and `apps/web/.env.local` show the dev shape; `.env.prod.example` (root) documents the production compose vars, notably that `NEXT_PUBLIC_API_URL` is baked into the web image at **build** time (Next.js inlines `NEXT_PUBLIC_*`), so the web image must be rebuilt if the public API URL changes.
-- Production: `docker-compose.prod.yml` bundles Mongo + MinIO + both app images with no reverse proxy/TLS (operator supplies their own); Mongo has no published port in prod, unlike dev.
+- Mongo needs a replica set (`?replicaSet=rs0` in the connection string) — not optional: better-auth needs transactions.
+- MinIO (S3-compatible, backs the Backup feature) needs path-style access enabled; its endpoint/access key/secret are entered via the in-app Storage Providers card, not as container env vars — the `api`/`web` compose has no MinIO config at all.
+- Env vars: `apps/api/.env.example` and `apps/web/.env.local` show the app-level local-dev shape; `docker/.env.example` documents `docker-compose.yml`'s vars, notably `MONGO_URL` (must point at wherever `docker-compose.infra.yml` is hosted, credentials included) and that `NEXT_PUBLIC_API_URL` is baked into the web image at **build** time (Next.js inlines `NEXT_PUBLIC_*`), so the web image must be rebuilt if the public API URL changes; `docker/.env.infra.example` documents the infra compose's Mongo/MinIO root credentials.
+- `docker-compose.yml` (api + web) has no reverse proxy/TLS bundled (operator supplies their own). Its services build with `context: ..` (repo root) since the Dockerfiles need the full pnpm workspace for `turbo prune` — `.dockerignore` stays at the repo root to match, not inside `docker/`.
+- `docker-compose.infra.yml` (Mongo + MinIO) has Mongo's `--auth` enabled and root credentials required, since it's meant to be reachable from outside its host.
 
 ## Architecture
 
