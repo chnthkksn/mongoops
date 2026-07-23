@@ -12,12 +12,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { api, type BackupShareLinkDto, type ClusterDto } from "@/lib/api-client";
 
 export function ShareLinksCard() {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
+  const confirm = useConfirm();
 
   const [links, setLinks] = useState<BackupShareLinkDto[] | null>(null);
   const [clusters, setClusters] = useState<ClusterDto[] | null>(null);
@@ -36,7 +38,11 @@ export function ShareLinksCard() {
   }
 
   async function onRevoke(id: string) {
-    if (!confirm("Revoke this share link? It will stop working immediately.")) return;
+    const ok = await confirm({
+      title: "Revoke share link",
+      description: "Revoke this share link? It will stop working immediately.",
+    });
+    if (!ok) return;
     await api.revokeBackupShareLink(id);
     load();
   }

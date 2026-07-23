@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -19,9 +21,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistMono.variable} h-full antialiased`}>
+    <html lang="en" className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
+        <ThemeProvider>
+          <TooltipProvider>
+            <ConfirmProvider>{children}</ConfirmProvider>
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

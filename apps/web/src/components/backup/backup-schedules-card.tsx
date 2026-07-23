@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   api,
   type ClusterDto,
@@ -21,6 +22,7 @@ import {
 export function BackupSchedulesCard() {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
+  const confirm = useConfirm();
 
   const [clusters, setClusters] = useState<ClusterDto[] | null>(null);
   const [providers, setProviders] = useState<StorageProviderDto[] | null>(null);
@@ -81,7 +83,11 @@ export function BackupSchedulesCard() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Delete this backup schedule?")) return;
+    const ok = await confirm({
+      title: "Delete backup schedule",
+      description: "Delete this backup schedule?",
+    });
+    if (!ok) return;
     await api.deleteBackupSchedule(id);
     load();
   }

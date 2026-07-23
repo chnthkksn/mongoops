@@ -250,6 +250,15 @@ export const api = {
   },
   listDatabases: (clusterId: string) =>
     request<DatabaseInfoDto[]>(`/clusters/${clusterId}/databases`),
+  createDatabase: (clusterId: string, input: { name: string; collectionName: string }) =>
+    request<{ ok: boolean }>(`/clusters/${clusterId}/databases`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  dropDatabase: (clusterId: string, db: string) =>
+    request<{ ok: boolean }>(`/clusters/${clusterId}/databases/${db}`, {
+      method: "DELETE",
+    }),
   listCollections: (clusterId: string, db: string) =>
     request<CollectionInfoDto[]>(`/clusters/${clusterId}/databases/${db}/collections`),
   listDocuments: (

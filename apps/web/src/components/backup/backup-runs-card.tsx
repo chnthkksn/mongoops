@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import {
   api,
@@ -50,6 +51,7 @@ function formatDuration(ms: number | null) {
 export function BackupRunsCard() {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
+  const confirm = useConfirm();
 
   const [clusters, setClusters] = useState<ClusterDto[] | null>(null);
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
@@ -103,16 +105,22 @@ export function BackupRunsCard() {
   async function onRestore(run: BackupRunDto) {
     const collectionCount = run.collections.length;
     const clusterName = clusters?.find((c) => c._id === run.clusterId)?.name ?? "this cluster";
-    const confirmed = confirm(
-      `This will overwrite ${collectionCount} collection${collectionCount === 1 ? "" : "s"} in ${clusterName}. Anything added to them since this backup was taken will be permanently lost. Continue?`,
-    );
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: "Restore backup",
+      description: `This will overwrite ${collectionCount} collection${collectionCount === 1 ? "" : "s"} in ${clusterName}. Anything added to them since this backup was taken will be permanently lost. Continue?`,
+      confirmLabel: "Restore",
+    });
+    if (!ok) return;
     await api.restoreBackupRun(run._id);
     loadRuns();
   }
 
   async function onDelete(run: BackupRunDto) {
-    if (!confirm("Delete this backup run and its stored data?")) return;
+    const ok = await confirm({
+      title: "Delete backup run",
+      description: "Delete this backup run and its stored data?",
+    });
+    if (!ok) return;
     await api.deleteBackupRun(run._id);
     loadRuns();
   }

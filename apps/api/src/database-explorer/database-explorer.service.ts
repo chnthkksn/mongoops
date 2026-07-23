@@ -59,6 +59,59 @@ export class DatabaseExplorerService {
     }
   }
 
+  // MongoDB has no explicit "create empty database" command — a database
+  // only exists once it has at least one collection, so creating one here
+  // means creating its first collection (matches the behavior of
+  // MongoDB Compass/Atlas, which ask for a first collection name too).
+  async createDatabase(
+    orgId: string,
+    clusterId: string,
+    options: { name: string; collectionName: string },
+    actor: Actor,
+  ) {
+    const { client } = await this.connect(orgId, clusterId);
+    try {
+      await client.db(options.name).createCollection(options.collectionName);
+
+      await this.auditLogService.record({
+        orgId,
+        actorUserId: actor.id,
+        actorName: actor.name,
+        action: 'database.created',
+        targetLabel: options.name,
+        metadata: { firstCollection: options.collectionName },
+      });
+
+      return { ok: true };
+    } finally {
+      await client.close().catch(() => undefined);
+    }
+  }
+
+  async dropDatabase(
+    orgId: string,
+    clusterId: string,
+    dbName: string,
+    actor: Actor,
+  ) {
+    const { client } = await this.connect(orgId, clusterId);
+    try {
+      await client.db(dbName).dropDatabase();
+
+      await this.auditLogService.record({
+        orgId,
+        actorUserId: actor.id,
+        actorName: actor.name,
+        action: 'database.dropped',
+        targetLabel: dbName,
+      });
+
+      return { ok: true };
+    } finally {
+      await client.close().catch(() => undefined);
+    }
+  }
+
   async listCollections(orgId: string, clusterId: string, dbName: string) {
     const { client } = await this.connect(orgId, clusterId);
     try {

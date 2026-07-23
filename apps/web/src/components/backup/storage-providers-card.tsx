@@ -14,10 +14,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { api, type StorageProviderDto } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 export function StorageProvidersCard() {
+  const confirm = useConfirm();
   const { data: activeRole } = authClient.useActiveMemberRole();
   const isOwner = activeRole?.role === "owner";
 
@@ -79,7 +81,11 @@ export function StorageProvidersCard() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Delete this storage provider?")) return;
+    const ok = await confirm({
+      title: "Delete storage provider",
+      description: "Delete this storage provider?",
+    });
+    if (!ok) return;
     await api.deleteStorageProvider(id);
     load();
   }

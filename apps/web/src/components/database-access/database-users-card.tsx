@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   api,
   type ClusterDto,
@@ -39,6 +40,7 @@ function emptyRoleRow(): RoleAssignment {
 }
 
 export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
+  const confirm = useConfirm();
   const [users, setUsers] = useState<DatabaseUserDto[] | null>(null);
   const [databases, setDatabases] = useState<DatabaseInfoDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -135,9 +137,11 @@ export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
   }
 
   async function onDelete(user: DatabaseUserDto) {
-    if (!confirm(`Delete database user "${user.username}"? Anything authenticating with it will lose access immediately.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete database user",
+      description: `Delete database user "${user.username}"? Anything authenticating with it will lose access immediately.`,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await api.deleteDatabaseUser(cluster._id, user.username);

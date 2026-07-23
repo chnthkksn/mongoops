@@ -3,6 +3,7 @@
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function AppShell({
   title,
@@ -37,7 +38,10 @@ export function AppShell({
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-background px-6">
           <h1 className="text-[15px] font-bold">{title}</h1>
-          {actions}
+          <div className="flex items-center gap-3">
+            {actions}
+            <ThemeToggle />
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto px-7 pb-[60px] pt-6">{children}</main>
       </div>

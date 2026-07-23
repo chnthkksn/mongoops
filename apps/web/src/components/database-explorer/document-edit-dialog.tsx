@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { api, type DocumentDto } from "@/lib/api-client";
 
 export function DocumentEditDialog({
@@ -32,6 +33,7 @@ export function DocumentEditDialog({
 }) {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canEdit = activeRole?.role === "owner" || activeRole?.role === "admin";
+  const confirm = useConfirm();
 
   const [open, setOpen] = useState(false);
   const [raw, setRaw] = useState(document.raw);
@@ -54,7 +56,11 @@ export function DocumentEditDialog({
   }
 
   async function onDelete() {
-    if (!confirm(`Delete document ${document.id}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete document",
+      description: `Delete document ${document.id}? This cannot be undone.`,
+    });
+    if (!ok) return;
     setError(null);
     setDeleting(true);
     try {

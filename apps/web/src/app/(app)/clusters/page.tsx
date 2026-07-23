@@ -15,11 +15,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { api, type ClusterDto } from "@/lib/api-client";
 
 export default function ClustersPage() {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
+  const confirm = useConfirm();
 
   const [clusters, setClusters] = useState<ClusterDto[] | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -44,9 +46,11 @@ export default function ClustersPage() {
   }
 
   async function handleDelete(cluster: ClusterDto) {
-    if (!confirm(`Remove "${cluster.name}"? This won't delete any data on the cluster itself.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Remove cluster",
+      description: `Remove "${cluster.name}"? This won't delete any data on the cluster itself.`,
+    });
+    if (!ok) return;
     await api.deleteCluster(cluster._id);
     load();
   }

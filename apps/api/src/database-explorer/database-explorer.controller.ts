@@ -18,6 +18,7 @@ import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { DatabaseExplorerService } from './database-explorer.service';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 import { InsertDocumentDto } from './dto/insert-document.dto';
+import { CreateDatabaseDto } from './dto/create-database.dto';
 import { CreateCollectionDto } from './dto/create-collection.dto';
 import { RenameCollectionDto } from './dto/rename-collection.dto';
 import { SetValidatorDto } from './dto/set-validator.dto';
@@ -40,6 +41,36 @@ export class DatabaseExplorerController {
     return this.databaseExplorerService.listDatabases(
       session.session.activeOrganizationId!,
       id,
+    );
+  }
+
+  @Post()
+  @OrgRoles(['owner', 'admin'])
+  createDatabase(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Body() dto: CreateDatabaseDto,
+  ) {
+    return this.databaseExplorerService.createDatabase(
+      session.session.activeOrganizationId!,
+      id,
+      dto,
+      this.actor(session),
+    );
+  }
+
+  @Delete(':db')
+  @OrgRoles(['owner', 'admin'])
+  dropDatabase(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Param('db') db: string,
+  ) {
+    return this.databaseExplorerService.dropDatabase(
+      session.session.activeOrganizationId!,
+      id,
+      db,
+      this.actor(session),
     );
   }
 

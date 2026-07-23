@@ -22,12 +22,14 @@ import { DocumentEditDialog } from "@/components/database-explorer/document-edit
 import { CopyDocumentButton } from "@/components/database-explorer/copy-document-button";
 import { InsertDocumentDialog } from "@/components/database-explorer/insert-document-dialog";
 import { CreateCollectionDialog } from "@/components/database-explorer/create-collection-dialog";
+import { CreateDatabaseDialog } from "@/components/database-explorer/create-database-dialog";
 import { RenameCollectionDialog } from "@/components/database-explorer/rename-collection-dialog";
 import { IndexWizardDialog } from "@/components/database-explorer/index-wizard-dialog";
 import { TtlInlineEditor } from "@/components/database-explorer/ttl-inline-editor";
 import { QueryBar, type QueryState } from "@/components/database-explorer/query-bar";
 import { JsonTreeView } from "@/components/database-explorer/json-tree-view";
 import { authClient } from "@/lib/auth-client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import {
   api,
@@ -74,6 +76,7 @@ function tabKey(clusterId: string, db: string, coll: string) {
 export default function DatabaseExplorerPage() {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
+  const confirm = useConfirm();
 
   const [clusters, setClusters] = useState<ClusterDto[] | null>(null);
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
@@ -113,6 +116,14 @@ export default function DatabaseExplorerPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const refreshDatabases = useCallback(() => {
+    if (!selectedClusterId) return;
+    api
+      .listDatabases(selectedClusterId)
+      .then(setDatabases)
+      .catch((err) => setDbsError(err instanceof Error ? err.message : "Could not load databases"));
+  }, [selectedClusterId]);
 
   const refreshCollections = useCallback(
     async (dbName: string) => {
@@ -248,11 +259,29 @@ export default function DatabaseExplorerPage() {
   }
 
   async function onDropCollection(dbName: string, collName: string) {
-    if (!confirm(`Drop collection ${dbName}.${collName}? This deletes all its documents.`)) return;
+    const ok = await confirm({
+      title: "Drop collection",
+      description: `Drop collection ${dbName}.${collName}? This deletes all its documents.`,
+    });
+    if (!ok) return;
     if (!selectedClusterId) return;
     await api.dropCollection(selectedClusterId, dbName, collName);
     closeTab(tabKey(selectedClusterId, dbName, collName));
     await refreshCollections(dbName);
+  }
+
+  async function onDropDatabase(dbName: string) {
+    const ok = await confirm({
+      title: "Drop database",
+      description: `Drop database "${dbName}"? This permanently deletes every collection and document in it.`,
+    });
+    if (!ok) return;
+    if (!selectedClusterId) return;
+    await api.dropDatabase(selectedClusterId, dbName);
+    setOpenTabs((prev) => prev.filter((t) => t.db !== dbName));
+    if (activeTab?.db === dbName) setActiveTabKey(null);
+    if (expandedDb === dbName) setExpandedDb(null);
+    refreshDatabases();
   }
 
   function onApplyQuery(next: QueryState) {
@@ -271,7 +300,11 @@ export default function DatabaseExplorerPage() {
 
   async function onQuickDelete(docId: string) {
     if (!activeTab) return;
-    if (!confirm(`Delete document ${docId}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete document",
+      description: `Delete document ${docId}? This cannot be undone.`,
+    });
+    if (!ok) return;
     await api.deleteDocument(activeTab.clusterId, activeTab.db, activeTab.coll, docId);
     loadDocumentsFor(activeTab);
   }
@@ -350,6 +383,11 @@ export default function DatabaseExplorerPage() {
 
           <div className="flex gap-4">
             <div className="w-[240px] shrink-0 rounded-[10px] border border-border bg-card p-2">
+              {canManage && selectedClusterId && (
+                <div className="mb-2 px-1">
+                  <CreateDatabaseDialog clusterId={selectedClusterId} onCreated={refreshDatabases} />
+                </div>
+              )}
               {dbsError && <p className="p-2 text-[12px] text-critical-fg">{dbsError}</p>}
               {databases === null && !dbsError && (
                 <p className="p-2 text-[12px] text-muted-foreground">Loading...</p>
@@ -359,16 +397,32 @@ export default function DatabaseExplorerPage() {
               )}
               {databases?.map((database) => (
                 <div key={database.name}>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-0.5">
                     <button
                       onClick={() => toggleDb(database.name)}
-                      className="flex flex-1 items-center justify-between rounded-[6px] px-2 py-1.5 text-left text-[12.5px] font-bold hover:bg-neutral-bg"
+                      className="flex min-w-0 flex-1 items-center justify-between gap-1.5 rounded-[6px] px-2 py-1.5 text-left text-[12.5px] font-bold hover:bg-neutral-bg"
                     >
-                      <span className="truncate">{database.name}</span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate">{database.name}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
                         {formatBytes(database.sizeOnDisk)}
                       </span>
                     </button>
+                    {canManage && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button className="rounded-[4px] px-1.5 py-1 text-muted-foreground hover:bg-neutral-bg" />
+                          }
+                        >
+                          ⋯
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onClick={() => onDropDatabase(database.name)}>
+                            Drop database
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                   {expandedDb === database.name && (
                     <div className="ml-2 flex flex-col">
@@ -796,7 +850,11 @@ export default function DatabaseExplorerPage() {
                                       size="sm"
                                       className="h-7 px-2.5 text-[12px]"
                                       onClick={async () => {
-                                        if (!confirm(`Drop index ${index.name}?`)) return;
+                                        const ok = await confirm({
+                                          title: "Drop index",
+                                          description: `Drop index ${index.name}?`,
+                                        });
+                                        if (!ok) return;
                                         await api.dropIndex(
                                           activeTab.clusterId,
                                           activeTab.db,
