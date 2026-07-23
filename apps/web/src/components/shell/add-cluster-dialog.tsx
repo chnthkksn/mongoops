@@ -13,6 +13,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ColorSwatchPicker } from "@/components/shell/color-swatch-picker";
 import { api } from "@/lib/api-client";
 
 export function AddClusterDialog({ onCreated }: { onCreated: () => void }) {
@@ -20,6 +21,7 @@ export function AddClusterDialog({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [connectionString, setConnectionString] = useState("");
   const [topology, setTopology] = useState<"standalone" | "replicaSet">("standalone");
+  const [color, setColor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,11 +30,17 @@ export function AddClusterDialog({ onCreated }: { onCreated: () => void }) {
     setError(null);
     setLoading(true);
     try {
-      await api.createCluster({ name, connectionString, topology });
+      await api.createCluster({
+        name,
+        connectionString,
+        topology,
+        ...(color ? { color } : {}),
+      });
       setOpen(false);
       setName("");
       setConnectionString("");
       setTopology("standalone");
+      setColor(null);
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect cluster");
@@ -80,6 +88,10 @@ export function AddClusterDialog({ onCreated }: { onCreated: () => void }) {
               <option value="standalone">Standalone</option>
               <option value="replicaSet">Replica set</option>
             </select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Color</Label>
+            <ColorSwatchPicker value={color} onChange={setColor} />
           </div>
           {error && <p className="text-sm text-critical-fg">{error}</p>}
           <DialogFooter>

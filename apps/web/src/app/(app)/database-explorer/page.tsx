@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +47,30 @@ function formatBytes(bytes: number) {
 
 const DEFAULT_QUERY: QueryState = { filter: "", sortField: "", sortDir: 1, limit: 25 };
 
+interface OpenTab {
+  key: string;
+  clusterId: string;
+  clusterName: string;
+  clusterColor: string;
+  db: string;
+  coll: string;
+  subTab: "documents" | "indexes" | "validation";
+  viewMode: "tree" | "table";
+  query: QueryState;
+  page: number;
+  // Cached per tab so switching tabs shows already-loaded data instantly
+  // instead of refetching — only explicit actions (query/page change,
+  // manual refresh, a mutation) trigger a reload for a given tab.
+  docs: DocumentListDto | null;
+  indexes: IndexDto[] | null;
+  validator: string;
+  validatorLoaded: boolean;
+}
+
+function tabKey(clusterId: string, db: string, coll: string) {
+  return `${clusterId}::${db}::${coll}`;
+}
+
 export default function DatabaseExplorerPage() {
   const { data: activeRole } = authClient.useActiveMemberRole();
   const canManage = activeRole?.role === "owner" || activeRole?.role === "admin";
@@ -56,21 +80,15 @@ export default function DatabaseExplorerPage() {
 
   const [databases, setDatabases] = useState<DatabaseInfoDto[] | null>(null);
   const [dbsError, setDbsError] = useState<string | null>(null);
-  const [collectionsByDb, setCollectionsByDb] = useState<Record<string, CollectionInfoDto[]>>({});
+  const [collectionsByCluster, setCollectionsByCluster] = useState<
+    Record<string, Record<string, CollectionInfoDto[]>>
+  >({});
   const [expandedDb, setExpandedDb] = useState<string | null>(null);
 
-  const [selectedDb, setSelectedDb] = useState<string | null>(null);
-  const [selectedColl, setSelectedColl] = useState<string | null>(null);
-  const [tab, setTab] = useState<"documents" | "indexes" | "validation">("documents");
-  const [viewMode, setViewMode] = useState<"tree" | "table">("tree");
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
+  const [activeTabKey, setActiveTabKey] = useState<string | null>(null);
+  const activeTab = openTabs.find((t) => t.key === activeTabKey) ?? null;
 
-  const [query, setQuery] = useState<QueryState>(DEFAULT_QUERY);
-  const [docs, setDocs] = useState<DocumentListDto | null>(null);
-  const [indexes, setIndexes] = useState<IndexDto[] | null>(null);
-  const [page, setPage] = useState(1);
-
-  const [validator, setValidator] = useState<string>("");
-  const [validatorLoaded, setValidatorLoaded] = useState(false);
   const [validatorError, setValidatorError] = useState<string | null>(null);
   const [validatorSaving, setValidatorSaving] = useState(false);
 
@@ -80,10 +98,7 @@ export default function DatabaseExplorerPage() {
     setSelectedClusterId(clusterId);
     setDatabases(null);
     setDbsError(null);
-    setCollectionsByDb({});
     setExpandedDb(null);
-    setSelectedDb(null);
-    setSelectedColl(null);
     api
       .listDatabases(clusterId)
       .then(setDatabases)
@@ -103,7 +118,10 @@ export default function DatabaseExplorerPage() {
     async (dbName: string) => {
       if (!selectedClusterId) return;
       const collections = await api.listCollections(selectedClusterId, dbName);
-      setCollectionsByDb((prev) => ({ ...prev, [dbName]: collections }));
+      setCollectionsByCluster((prev) => ({
+        ...prev,
+        [selectedClusterId]: { ...(prev[selectedClusterId] ?? {}), [dbName]: collections },
+      }));
     },
     [selectedClusterId],
   );
@@ -114,67 +132,114 @@ export default function DatabaseExplorerPage() {
       return;
     }
     setExpandedDb(dbName);
-    if (!collectionsByDb[dbName]) {
+    if (!collectionsByCluster[selectedClusterId ?? ""]?.[dbName]) {
       await refreshCollections(dbName);
     }
   }
 
-  function selectCollection(dbName: string, collName: string) {
-    setSelectedDb(dbName);
-    setSelectedColl(collName);
-    setTab("documents");
-    setPage(1);
-    setQuery(DEFAULT_QUERY);
-    setValidatorLoaded(false);
+  function patchTab(key: string, patch: Partial<OpenTab>) {
+    setOpenTabs((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)));
   }
 
-  const loadDocuments = useCallback(() => {
-    if (!selectedClusterId || !selectedDb || !selectedColl) return;
+  function updateActiveTab(patch: Partial<OpenTab>) {
+    if (!activeTab) return;
+    patchTab(activeTab.key, patch);
+  }
+
+  const loadDocumentsFor = useCallback((tab: OpenTab) => {
     api
-      .listDocuments(selectedClusterId, selectedDb, selectedColl, {
-        page,
-        limit: query.limit,
-        filter: query.filter || undefined,
-        sort: query.sortField ? `${query.sortField}:${query.sortDir}` : undefined,
+      .listDocuments(tab.clusterId, tab.db, tab.coll, {
+        page: tab.page,
+        limit: tab.query.limit,
+        filter: tab.query.filter || undefined,
+        sort: tab.query.sortField ? `${tab.query.sortField}:${tab.query.sortDir}` : undefined,
       })
-      .then(setDocs);
-  }, [selectedClusterId, selectedDb, selectedColl, page, query]);
+      .then((docs) => patchTab(tab.key, { docs }));
+  }, []);
 
-  useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
+  const loadIndexesFor = useCallback((tab: OpenTab) => {
+    api
+      .listIndexes(tab.clusterId, tab.db, tab.coll)
+      .then((indexes) => patchTab(tab.key, { indexes }));
+  }, []);
 
-  const loadIndexes = useCallback(() => {
-    if (!selectedClusterId || !selectedDb || !selectedColl) return;
-    api.listIndexes(selectedClusterId, selectedDb, selectedColl).then(setIndexes);
-  }, [selectedClusterId, selectedDb, selectedColl]);
-
-  useEffect(() => {
-    if (tab === "indexes") loadIndexes();
-  }, [tab, loadIndexes]);
-
-  useEffect(() => {
-    if (
-      tab === "validation" &&
-      !validatorLoaded &&
-      selectedClusterId &&
-      selectedDb &&
-      selectedColl
-    ) {
-      api.getValidator(selectedClusterId, selectedDb, selectedColl).then((res) => {
-        setValidator(res.validator ? JSON.stringify(res.validator, null, 2) : "");
-        setValidatorLoaded(true);
+  const loadValidatorFor = useCallback((tab: OpenTab) => {
+    api.getValidator(tab.clusterId, tab.db, tab.coll).then((res) => {
+      patchTab(tab.key, {
+        validator: res.validator ? JSON.stringify(res.validator, null, 2) : "",
+        validatorLoaded: true,
       });
+    });
+  }, []);
+
+  function openCollectionTab(dbName: string, collName: string) {
+    if (!selectedClusterId) return;
+    const key = tabKey(selectedClusterId, dbName, collName);
+    const existing = openTabs.find((t) => t.key === key);
+    if (existing) {
+      setActiveTabKey(key);
+      return;
     }
-  }, [tab, validatorLoaded, selectedClusterId, selectedDb, selectedColl]);
+    const cluster = clusters?.find((c) => c._id === selectedClusterId);
+    const newTab: OpenTab = {
+      key,
+      clusterId: selectedClusterId,
+      clusterName: cluster?.name ?? "Cluster",
+      clusterColor: cluster?.color ?? "#93c5fd",
+      db: dbName,
+      coll: collName,
+      subTab: "documents",
+      viewMode: "tree",
+      query: DEFAULT_QUERY,
+      page: 1,
+      docs: null,
+      indexes: null,
+      validator: "",
+      validatorLoaded: false,
+    };
+    setOpenTabs((prev) => [...prev, newTab]);
+    setActiveTabKey(key);
+    loadDocumentsFor(newTab);
+  }
+
+  function closeTab(key: string) {
+    setOpenTabs((prev) => {
+      const idx = prev.findIndex((t) => t.key === key);
+      if (idx === -1) return prev;
+      const next = prev.filter((t) => t.key !== key);
+      if (activeTabKey === key) {
+        const neighbor = next[idx] ?? next[idx - 1] ?? null;
+        setActiveTabKey(neighbor?.key ?? null);
+      }
+      return next;
+    });
+  }
+
+  // Lazily load indexes/validator the first time a tab's sub-tab is
+  // opened — not on every switch back to an already-loaded tab.
+  useEffect(() => {
+    if (activeTab && activeTab.subTab === "indexes" && activeTab.indexes === null) {
+      loadIndexesFor(activeTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.key, activeTab?.subTab, activeTab?.indexes]);
+
+  useEffect(() => {
+    if (activeTab && activeTab.subTab === "validation" && !activeTab.validatorLoaded) {
+      loadValidatorFor(activeTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.key, activeTab?.subTab, activeTab?.validatorLoaded]);
 
   async function onSaveValidator() {
-    if (!selectedClusterId || !selectedDb || !selectedColl) return;
+    if (!activeTab) return;
     setValidatorError(null);
     setValidatorSaving(true);
     try {
-      const parsed = validator.trim() ? (JSON.parse(validator) as Record<string, unknown>) : {};
-      await api.setValidator(selectedClusterId, selectedDb, selectedColl, parsed);
+      const parsed = activeTab.validator.trim()
+        ? (JSON.parse(activeTab.validator) as Record<string, unknown>)
+        : {};
+      await api.setValidator(activeTab.clusterId, activeTab.db, activeTab.coll, parsed);
     } catch (err) {
       setValidatorError(err instanceof Error ? err.message : "Could not save validator");
     } finally {
@@ -186,35 +251,53 @@ export default function DatabaseExplorerPage() {
     if (!confirm(`Drop collection ${dbName}.${collName}? This deletes all its documents.`)) return;
     if (!selectedClusterId) return;
     await api.dropCollection(selectedClusterId, dbName, collName);
-    if (selectedColl === collName) {
-      setSelectedColl(null);
-      setSelectedDb(null);
-    }
+    closeTab(tabKey(selectedClusterId, dbName, collName));
     await refreshCollections(dbName);
   }
 
   function onApplyQuery(next: QueryState) {
-    setQuery(next);
-    setPage(1);
+    if (!activeTab) return;
+    const updated = { ...activeTab, query: next, page: 1 };
+    patchTab(activeTab.key, updated);
+    loadDocumentsFor(updated);
+  }
+
+  function changePage(delta: number) {
+    if (!activeTab) return;
+    const updated = { ...activeTab, page: activeTab.page + delta };
+    patchTab(activeTab.key, updated);
+    loadDocumentsFor(updated);
   }
 
   async function onQuickDelete(docId: string) {
-    if (!selectedClusterId || !selectedDb || !selectedColl) return;
+    if (!activeTab) return;
     if (!confirm(`Delete document ${docId}? This cannot be undone.`)) return;
-    await api.deleteDocument(selectedClusterId, selectedDb, selectedColl, docId);
-    loadDocuments();
+    await api.deleteDocument(activeTab.clusterId, activeTab.db, activeTab.coll, docId);
+    loadDocumentsFor(activeTab);
+  }
+
+  function reloadDocuments() {
+    if (activeTab) loadDocumentsFor(activeTab);
+  }
+
+  function reloadIndexes() {
+    if (activeTab) loadIndexesFor(activeTab);
   }
 
   function refreshActiveTab() {
-    if (tab === "documents") loadDocuments();
-    else if (tab === "indexes") loadIndexes();
-    else if (tab === "validation") setValidatorLoaded(false);
+    if (!activeTab) return;
+    if (activeTab.subTab === "documents") loadDocumentsFor(activeTab);
+    else if (activeTab.subTab === "indexes") loadIndexesFor(activeTab);
+    else if (activeTab.subTab === "validation") loadValidatorFor(activeTab);
   }
 
-  const selectedStats =
-    selectedDb && selectedColl
-      ? collectionsByDb[selectedDb]?.find((c) => c.name === selectedColl)
-      : null;
+  const activeStats = activeTab
+    ? collectionsByCluster[activeTab.clusterId]?.[activeTab.db]?.find(
+        (c) => c.name === activeTab.coll,
+      )
+    : null;
+  const docs = activeTab?.docs ?? null;
+  const indexes = activeTab?.indexes ?? null;
   const totalPages = docs ? Math.max(1, Math.ceil(docs.total / docs.limit)) : 1;
 
   const tableColumns =
@@ -253,11 +336,12 @@ export default function DatabaseExplorerPage() {
                 key={cluster._id}
                 onClick={() => selectCluster(cluster._id)}
                 className={cn(
-                  "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
+                  "rounded-full border-2 px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
                   cluster._id === selectedClusterId
-                    ? "bg-primary text-primary-foreground"
-                    : "border border-border bg-transparent text-muted-foreground hover:bg-neutral-bg",
+                    ? "border-transparent text-neutral-900"
+                    : "border-border bg-transparent text-muted-foreground hover:bg-neutral-bg",
                 )}
+                style={cluster._id === selectedClusterId ? { backgroundColor: cluster.color } : undefined}
               >
                 {cluster.name}
               </button>
@@ -288,50 +372,52 @@ export default function DatabaseExplorerPage() {
                   </div>
                   {expandedDb === database.name && (
                     <div className="ml-2 flex flex-col">
-                      {!collectionsByDb[database.name] && (
+                      {!collectionsByCluster[selectedClusterId ?? ""]?.[database.name] && (
                         <p className="px-2 py-1 text-[11px] text-muted-foreground">Loading...</p>
                       )}
-                      {collectionsByDb[database.name]?.map((coll) => (
-                        <div key={coll.name} className="flex items-center gap-0.5">
-                          <button
-                            onClick={() => selectCollection(database.name, coll.name)}
-                            className={cn(
-                              "flex-1 truncate rounded-[6px] px-2 py-1 text-left text-[12px]",
-                              selectedDb === database.name && selectedColl === coll.name
-                                ? "bg-accent text-accent-foreground"
-                                : "text-muted-foreground hover:bg-neutral-bg",
-                            )}
-                          >
-                            {coll.name}
-                            {coll.capped && (
-                              <span className="ml-1 text-[9px] text-muted-foreground">capped</span>
-                            )}
-                          </button>
-                          {canManage && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <button className="rounded-[4px] px-1.5 py-1 text-muted-foreground hover:bg-neutral-bg" />
-                                }
-                              >
-                                ⋯
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start">
-                                <DropdownMenuItem
-                                  onClick={() => setRenameTarget(`${database.name}::${coll.name}`)}
+                      {collectionsByCluster[selectedClusterId ?? ""]?.[database.name]?.map(
+                        (coll) => (
+                          <div key={coll.name} className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => openCollectionTab(database.name, coll.name)}
+                              className={cn(
+                                "flex-1 truncate rounded-[6px] px-2 py-1 text-left text-[12px]",
+                                activeTab?.db === database.name && activeTab?.coll === coll.name
+                                  ? "bg-accent text-accent-foreground"
+                                  : "text-muted-foreground hover:bg-neutral-bg",
+                              )}
+                            >
+                              {coll.name}
+                              {coll.capped && (
+                                <span className="ml-1 text-[9px] text-muted-foreground">capped</span>
+                              )}
+                            </button>
+                            {canManage && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  render={
+                                    <button className="rounded-[4px] px-1.5 py-1 text-muted-foreground hover:bg-neutral-bg" />
+                                  }
                                 >
-                                  Rename
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => onDropCollection(database.name, coll.name)}
-                                >
-                                  Drop
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                      ))}
+                                  ⋯
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start">
+                                  <DropdownMenuItem
+                                    onClick={() => setRenameTarget(`${database.name}::${coll.name}`)}
+                                  >
+                                    Rename
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => onDropCollection(database.name, coll.name)}
+                                  >
+                                    Drop
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
+                        ),
+                      )}
                       {canManage && selectedClusterId && (
                         <div className="mt-1 px-1">
                           <CreateCollectionDialog
@@ -348,17 +434,67 @@ export default function DatabaseExplorerPage() {
             </div>
 
             <div className="min-w-0 flex-1">
-              {!selectedColl && (
-                <div className="rounded-[10px] border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-                  Select a collection to browse its documents.
+              {openTabs.length > 0 && (
+                <div className="flex gap-1 overflow-x-auto border-b border-border">
+                  {openTabs.map((t) => (
+                    <button
+                      key={t.key}
+                      onClick={() => setActiveTabKey(t.key)}
+                      className={cn(
+                        "group -mb-px flex shrink-0 items-center gap-2 rounded-t-[8px] border-x border-t px-3 py-2 text-[12px] font-semibold",
+                        t.key === activeTabKey
+                          ? "border-border bg-card text-foreground"
+                          : "border-transparent bg-transparent text-muted-foreground hover:bg-neutral-bg",
+                      )}
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: t.clusterColor }}
+                      />
+                      <span className="whitespace-nowrap font-mono">
+                        {t.db}.{t.coll}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeTab(t.key);
+                        }}
+                        className="rounded-[3px] p-0.5 text-muted-foreground opacity-0 hover:bg-neutral-bg hover:text-foreground group-hover:opacity-100"
+                      >
+                        <X size={12} />
+                      </span>
+                    </button>
+                  ))}
                 </div>
               )}
 
-              {selectedColl && selectedDb && selectedClusterId && (
-                <div className="rounded-[10px] border border-border bg-card">
+              {!activeTab && (
+                <div
+                  className={cn(
+                    "border border-border bg-card p-6 text-center text-sm text-muted-foreground",
+                    openTabs.length > 0 ? "rounded-b-[10px]" : "rounded-[10px]",
+                  )}
+                >
+                  {openTabs.length === 0
+                    ? "Select a collection from the sidebar to open it as a tab."
+                    : "Select a tab to browse its documents."}
+                </div>
+              )}
+
+              {activeTab && (
+                <div className="rounded-b-[10px] border-x border-b border-border bg-card">
                   <div className="border-b border-border p-[18px]">
                     <h2 className="flex items-center gap-1.5 font-mono text-[15px] font-bold">
-                      {selectedDb}.{selectedColl}
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: activeTab.clusterColor }}
+                      />
+                      {activeTab.db}.{activeTab.coll}
+                      <span className="text-[11px] font-normal text-muted-foreground">
+                        {activeTab.clusterName}
+                      </span>
                       <button
                         onClick={refreshActiveTab}
                         title="Refresh"
@@ -367,21 +503,21 @@ export default function DatabaseExplorerPage() {
                         <RefreshCw size={13} />
                       </button>
                     </h2>
-                    {selectedStats && (
+                    {activeStats && (
                       <div className="mt-2 flex gap-5 text-[11px] text-muted-foreground">
-                        <span>{selectedStats.count.toLocaleString()} docs</span>
-                        <span>avg {formatBytes(selectedStats.avgObjSize)}</span>
-                        <span>{formatBytes(selectedStats.storageSize)} total</span>
-                        <span>{selectedStats.nindexes} indexes</span>
+                        <span>{activeStats.count.toLocaleString()} docs</span>
+                        <span>avg {formatBytes(activeStats.avgObjSize)}</span>
+                        <span>{formatBytes(activeStats.storageSize)} total</span>
+                        <span>{activeStats.nindexes} indexes</span>
                       </div>
                     )}
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex gap-4 border-b border-transparent text-[12.5px] font-semibold">
                         <button
-                          onClick={() => setTab("documents")}
+                          onClick={() => updateActiveTab({ subTab: "documents" })}
                           className={cn(
                             "border-b-2 pb-2",
-                            tab === "documents"
+                            activeTab.subTab === "documents"
                               ? "border-primary text-foreground"
                               : "border-transparent text-muted-foreground",
                           )}
@@ -389,10 +525,10 @@ export default function DatabaseExplorerPage() {
                           Documents
                         </button>
                         <button
-                          onClick={() => setTab("indexes")}
+                          onClick={() => updateActiveTab({ subTab: "indexes" })}
                           className={cn(
                             "border-b-2 pb-2",
-                            tab === "indexes"
+                            activeTab.subTab === "indexes"
                               ? "border-primary text-foreground"
                               : "border-transparent text-muted-foreground",
                           )}
@@ -400,10 +536,10 @@ export default function DatabaseExplorerPage() {
                           Indexes
                         </button>
                         <button
-                          onClick={() => setTab("validation")}
+                          onClick={() => updateActiveTab({ subTab: "validation" })}
                           className={cn(
                             "border-b-2 pb-2",
-                            tab === "validation"
+                            activeTab.subTab === "validation"
                               ? "border-primary text-foreground"
                               : "border-transparent text-muted-foreground",
                           )}
@@ -411,13 +547,13 @@ export default function DatabaseExplorerPage() {
                           Validation
                         </button>
                       </div>
-                      {tab === "documents" && (
+                      {activeTab.subTab === "documents" && (
                         <div className="flex gap-1 pb-2">
                           <button
-                            onClick={() => setViewMode("tree")}
+                            onClick={() => updateActiveTab({ viewMode: "tree" })}
                             className={cn(
                               "rounded-md px-2 py-1 text-[11px] font-semibold",
-                              viewMode === "tree"
+                              activeTab.viewMode === "tree"
                                 ? "bg-primary text-primary-foreground"
                                 : "text-muted-foreground hover:bg-neutral-bg",
                             )}
@@ -425,10 +561,10 @@ export default function DatabaseExplorerPage() {
                             Tree
                           </button>
                           <button
-                            onClick={() => setViewMode("table")}
+                            onClick={() => updateActiveTab({ viewMode: "table" })}
                             className={cn(
                               "rounded-md px-2 py-1 text-[11px] font-semibold",
-                              viewMode === "table"
+                              activeTab.viewMode === "table"
                                 ? "bg-primary text-primary-foreground"
                                 : "text-muted-foreground hover:bg-neutral-bg",
                             )}
@@ -440,21 +576,21 @@ export default function DatabaseExplorerPage() {
                     </div>
                   </div>
 
-                  {tab === "documents" && (
+                  {activeTab.subTab === "documents" && (
                     <>
-                      <QueryBar initial={query} onApply={onApplyQuery} />
+                      <QueryBar initial={activeTab.query} onApply={onApplyQuery} />
                       {canManage && (
                         <div className="flex justify-end p-3 pb-0">
                           <InsertDocumentDialog
-                            clusterId={selectedClusterId}
-                            db={selectedDb}
-                            coll={selectedColl}
-                            onInserted={loadDocuments}
+                            clusterId={activeTab.clusterId}
+                            db={activeTab.db}
+                            coll={activeTab.coll}
+                            onInserted={reloadDocuments}
                           />
                         </div>
                       )}
 
-                      {viewMode === "tree" && (
+                      {activeTab.viewMode === "tree" && (
                         <div className="flex flex-col divide-y divide-border">
                           {docs === null && (
                             <p className="p-4 text-center text-sm text-muted-foreground">Loading...</p>
@@ -472,12 +608,12 @@ export default function DatabaseExplorerPage() {
                               <div className="flex shrink-0 items-center gap-1">
                                 <CopyDocumentButton raw={doc.raw} />
                                 <DocumentEditDialog
-                                  clusterId={selectedClusterId}
-                                  db={selectedDb}
-                                  coll={selectedColl}
+                                  clusterId={activeTab.clusterId}
+                                  db={activeTab.db}
+                                  coll={activeTab.coll}
                                   document={doc}
-                                  onSaved={loadDocuments}
-                                  onDeleted={loadDocuments}
+                                  onSaved={reloadDocuments}
+                                  onDeleted={reloadDocuments}
                                 />
                                 {canManage && (
                                   <button
@@ -494,7 +630,7 @@ export default function DatabaseExplorerPage() {
                         </div>
                       )}
 
-                      {viewMode === "table" && (
+                      {activeTab.viewMode === "table" && (
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
@@ -536,12 +672,12 @@ export default function DatabaseExplorerPage() {
                                     <div className="flex items-center justify-end gap-1">
                                       <CopyDocumentButton raw={doc.raw} />
                                       <DocumentEditDialog
-                                        clusterId={selectedClusterId}
-                                        db={selectedDb}
-                                        coll={selectedColl}
+                                        clusterId={activeTab.clusterId}
+                                        db={activeTab.db}
+                                        coll={activeTab.coll}
                                         document={doc}
-                                        onSaved={loadDocuments}
-                                        onDeleted={loadDocuments}
+                                        onSaved={reloadDocuments}
+                                        onDeleted={reloadDocuments}
                                       />
                                       {canManage && (
                                         <button
@@ -564,15 +700,15 @@ export default function DatabaseExplorerPage() {
                       {docs && docs.total > docs.limit && (
                         <div className="flex items-center justify-between p-3">
                           <span className="text-[11px] text-muted-foreground">
-                            Page {page} of {totalPages}
+                            Page {activeTab.page} of {totalPages}
                           </span>
                           <div className="flex gap-2">
                             <Button
                               variant="outline"
                               size="sm"
                               className="h-7 px-2.5 text-[12px]"
-                              disabled={page <= 1}
-                              onClick={() => setPage((p) => p - 1)}
+                              disabled={activeTab.page <= 1}
+                              onClick={() => changePage(-1)}
                             >
                               Previous
                             </Button>
@@ -580,8 +716,8 @@ export default function DatabaseExplorerPage() {
                               variant="outline"
                               size="sm"
                               className="h-7 px-2.5 text-[12px]"
-                              disabled={page >= totalPages}
-                              onClick={() => setPage((p) => p + 1)}
+                              disabled={activeTab.page >= totalPages}
+                              onClick={() => changePage(1)}
                             >
                               Next
                             </Button>
@@ -591,15 +727,15 @@ export default function DatabaseExplorerPage() {
                     </>
                   )}
 
-                  {tab === "indexes" && (
+                  {activeTab.subTab === "indexes" && (
                     <>
                       {canManage && (
                         <div className="flex justify-end p-3">
                           <IndexWizardDialog
-                            clusterId={selectedClusterId}
-                            db={selectedDb}
-                            coll={selectedColl}
-                            onCreated={loadIndexes}
+                            clusterId={activeTab.clusterId}
+                            db={activeTab.db}
+                            coll={activeTab.coll}
+                            onCreated={reloadIndexes}
                           />
                         </div>
                       )}
@@ -638,12 +774,12 @@ export default function DatabaseExplorerPage() {
                                 {index.expireAfterSeconds !== null ? (
                                   canManage ? (
                                     <TtlInlineEditor
-                                      clusterId={selectedClusterId}
-                                      db={selectedDb}
-                                      coll={selectedColl}
+                                      clusterId={activeTab.clusterId}
+                                      db={activeTab.db}
+                                      coll={activeTab.coll}
                                       indexName={index.name}
                                       currentValue={index.expireAfterSeconds}
-                                      onSaved={loadIndexes}
+                                      onSaved={reloadIndexes}
                                     />
                                   ) : (
                                     index.expireAfterSeconds
@@ -662,12 +798,12 @@ export default function DatabaseExplorerPage() {
                                       onClick={async () => {
                                         if (!confirm(`Drop index ${index.name}?`)) return;
                                         await api.dropIndex(
-                                          selectedClusterId,
-                                          selectedDb,
-                                          selectedColl,
+                                          activeTab.clusterId,
+                                          activeTab.db,
+                                          activeTab.coll,
                                           index.name,
                                         );
-                                        loadIndexes();
+                                        reloadIndexes();
                                       }}
                                     >
                                       Drop
@@ -682,11 +818,11 @@ export default function DatabaseExplorerPage() {
                     </>
                   )}
 
-                  {tab === "validation" && (
+                  {activeTab.subTab === "validation" && (
                     <div className="p-[18px]">
                       <textarea
-                        value={validator}
-                        onChange={(e) => setValidator(e.target.value)}
+                        value={activeTab.validator}
+                        onChange={(e) => updateActiveTab({ validator: e.target.value })}
                         readOnly={!canManage}
                         placeholder={canManage ? '{ "$jsonSchema": { ... } }' : "No validation rules set."}
                         spellCheck={false}
@@ -727,7 +863,10 @@ export default function DatabaseExplorerPage() {
               onOpenChange={(open) => {
                 if (!open) setRenameTarget(null);
               }}
-              onRenamed={() => refreshCollections(db)}
+              onRenamed={() => {
+                refreshCollections(db);
+                closeTab(tabKey(selectedClusterId, db, coll));
+              }}
             />
           );
         })()}

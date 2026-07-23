@@ -92,7 +92,15 @@ export default function ClustersPage() {
             )}
             {clusters?.map((cluster) => (
               <TableRow key={cluster._id}>
-                <TableCell className="font-semibold">{cluster.name}</TableCell>
+                <TableCell className="font-semibold">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: cluster.color }}
+                    />
+                    {cluster.name}
+                  </span>
+                </TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">
                   {cluster.topology === "standalone" ? "Standalone" : "Replica set"}
                 </TableCell>

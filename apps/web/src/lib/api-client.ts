@@ -31,6 +31,7 @@ export interface ClusterDto {
   lastCheckedAt: string | null;
   nodeCount: number | null;
   createdAt: string;
+  color: string;
 }
 
 export interface TestConnectionResult {
@@ -174,9 +175,28 @@ export interface BackupShareLinkDto {
   createdAt: string;
 }
 
+export interface RoleAssignment {
+  role: string;
+  db: string;
+}
+
+export interface DatabaseUserDto {
+  username: string;
+  roles: RoleAssignment[];
+}
+
+export interface CreatedDatabaseUserDto extends DatabaseUserDto {
+  password: string;
+}
+
 export const api = {
   listClusters: () => request<ClusterDto[]>("/clusters"),
-  createCluster: (input: { name: string; connectionString: string; topology: "standalone" | "replicaSet" }) =>
+  createCluster: (input: {
+    name: string;
+    connectionString: string;
+    topology: "standalone" | "replicaSet";
+    color?: string;
+  }) =>
     request<ClusterDto>("/clusters", {
       method: "POST",
       body: JSON.stringify(input),
@@ -187,7 +207,12 @@ export const api = {
     }),
   updateCluster: (
     id: string,
-    input: { name?: string; connectionString?: string; topology?: "standalone" | "replicaSet" },
+    input: {
+      name?: string;
+      connectionString?: string;
+      topology?: "standalone" | "replicaSet";
+      color?: string;
+    },
   ) =>
     request<ClusterDto>(`/clusters/${id}`, {
       method: "PATCH",
@@ -396,4 +421,30 @@ export const api = {
     }),
   revokeBackupShareLink: (id: string) =>
     request<{ ok: boolean }>(`/backup-share-links/${id}`, { method: "DELETE" }),
+
+  listDatabaseUsers: (clusterId: string) =>
+    request<DatabaseUserDto[]>(`/clusters/${clusterId}/database-users`),
+  createDatabaseUser: (
+    clusterId: string,
+    input: { username: string; password?: string; roles: RoleAssignment[] },
+  ) =>
+    request<CreatedDatabaseUserDto>(`/clusters/${clusterId}/database-users`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateDatabaseUserRoles: (clusterId: string, username: string, roles: RoleAssignment[]) =>
+    request<DatabaseUserDto>(
+      `/clusters/${clusterId}/database-users/${username}/roles`,
+      { method: "PUT", body: JSON.stringify({ roles }) },
+    ),
+  resetDatabaseUserPassword: (clusterId: string, username: string, password?: string) =>
+    request<{ username: string; password: string }>(
+      `/clusters/${clusterId}/database-users/${username}/reset-password`,
+      { method: "POST", body: JSON.stringify(password ? { password } : {}) },
+    ),
+  deleteDatabaseUser: (clusterId: string, username: string) =>
+    request<{ ok: boolean }>(
+      `/clusters/${clusterId}/database-users/${username}`,
+      { method: "DELETE" },
+    ),
 };

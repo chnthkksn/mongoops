@@ -5,6 +5,7 @@ import { MongoClient } from 'mongodb';
 import { Cluster } from './cluster.schema';
 import { CreateClusterDto } from './dto/create-cluster.dto';
 import { UpdateClusterDto } from './dto/update-cluster.dto';
+import { randomClusterColor } from './cluster-colors';
 import { encryptSecret, decryptSecret } from '../common/crypto.util';
 import { AuditLogService } from '../audit/audit-log.service';
 
@@ -30,6 +31,7 @@ export class ClustersService {
       topology: dto.topology,
       encryptedConnectionString: encryptSecret(dto.connectionString),
       status: 'unknown',
+      color: dto.color ?? randomClusterColor(),
     });
 
     await this.auditLogService.record({
@@ -62,6 +64,7 @@ export class ClustersService {
 
     if (dto.name !== undefined) cluster.name = dto.name;
     if (dto.topology !== undefined) cluster.topology = dto.topology;
+    if (dto.color !== undefined) cluster.color = dto.color;
     if (dto.connectionString !== undefined) {
       cluster.encryptedConnectionString = encryptSecret(dto.connectionString);
       // A changed connection string points at a potentially different

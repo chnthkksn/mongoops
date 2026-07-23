@@ -12,6 +12,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ColorSwatchPicker } from "@/components/shell/color-swatch-picker";
+import { pickRandomClusterColor } from "@/lib/cluster-colors";
 import { api, type ClusterDto } from "@/lib/api-client";
 
 export function EditClusterDialog({
@@ -28,6 +30,7 @@ export function EditClusterDialog({
   const [name, setName] = useState(cluster.name);
   const [connectionString, setConnectionString] = useState("");
   const [topology, setTopology] = useState<"standalone" | "replicaSet">(cluster.topology);
+  const [color, setColor] = useState(cluster.color);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -35,6 +38,7 @@ export function EditClusterDialog({
     setName(cluster.name);
     setConnectionString("");
     setTopology(cluster.topology);
+    setColor(cluster.color);
     setError(null);
   }
 
@@ -46,6 +50,7 @@ export function EditClusterDialog({
       await api.updateCluster(cluster._id, {
         name,
         topology,
+        color,
         ...(connectionString ? { connectionString } : {}),
       });
       onOpenChange(false);
@@ -103,6 +108,13 @@ export function EditClusterDialog({
               <option value="standalone">Standalone</option>
               <option value="replicaSet">Replica set</option>
             </select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Color</Label>
+            <ColorSwatchPicker
+              value={color}
+              onChange={(next) => setColor(next ?? pickRandomClusterColor())}
+            />
           </div>
           {error && <p className="text-sm text-critical-fg">{error}</p>}
           <DialogFooter>

@@ -1,4 +1,10 @@
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsHexColor,
+  IsIn,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class UpdateClusterDto {
   @IsOptional()
@@ -14,4 +20,8 @@ export class UpdateClusterDto {
   @IsOptional()
   @IsIn(['standalone', 'replicaSet'])
   topology?: 'standalone' | 'replicaSet';
+
+  @IsOptional()
+  @IsHexColor()
+  color?: string;
 }

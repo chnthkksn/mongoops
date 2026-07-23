@@ -161,11 +161,12 @@ export default function MonitoringPage() {
                     setSamples(null);
                   }}
                   className={cn(
-                    "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
+                    "rounded-full border-2 px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
                     cluster._id === selectedId
-                      ? "bg-primary text-primary-foreground"
-                      : "border border-border bg-transparent text-muted-foreground hover:bg-neutral-bg",
+                      ? "border-transparent text-neutral-900"
+                      : "border-border bg-transparent text-muted-foreground hover:bg-neutral-bg",
                   )}
+                  style={cluster._id === selectedId ? { backgroundColor: cluster.color } : undefined}
                 >
                   {cluster.name}
                 </button>

@@ -12,6 +12,7 @@ import { AuditModule } from './audit/audit.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { DatabaseExplorerModule } from './database-explorer/database-explorer.module';
 import { BackupModule } from './backup/backup.module';
+import { DatabaseUsersModule } from './database-users/database-users.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { BackupModule } from './backup/backup.module';
     ApiKeysModule,
     DatabaseExplorerModule,
     BackupModule,
+    DatabaseUsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
