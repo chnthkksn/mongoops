@@ -76,6 +76,11 @@ export interface AuditLogDto {
   createdAt: string;
 }
 
+export interface AuditLogListDto {
+  logs: AuditLogDto[];
+  total: number;
+}
+
 export interface DatabaseInfoDto {
   name: string;
   sizeOnDisk: number;
@@ -234,7 +239,15 @@ export const api = {
     request<void>(`/api-keys/${id}`, {
       method: "DELETE",
     }),
-  listAuditLogs: () => request<AuditLogDto[]>("/audit-logs"),
+  listAuditLogs: (opts: { limit?: number; skip?: number; from?: string; to?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.limit) params.set("limit", String(opts.limit));
+    if (opts.skip) params.set("skip", String(opts.skip));
+    if (opts.from) params.set("from", opts.from);
+    if (opts.to) params.set("to", opts.to);
+    const qs = params.toString();
+    return request<AuditLogListDto>(`/audit-logs${qs ? `?${qs}` : ""}`);
+  },
   listDatabases: (clusterId: string) =>
     request<DatabaseInfoDto[]>(`/clusters/${clusterId}/databases`),
   listCollections: (clusterId: string, db: string) =>

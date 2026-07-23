@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import {
   api,
   type ClusterDto,
+  type DatabaseInfoDto,
   type DatabaseUserDto,
   type RoleAssignment,
 } from "@/lib/api-client";
@@ -17,6 +18,10 @@ const ANY_DB_ROLES = new Set([
   "dbAdminAnyDatabase",
   "userAdminAnyDatabase",
 ]);
+
+// These roles apply across the whole cluster (always scoped to `admin`),
+// so there's no per-database choice to make for them.
+const FULL_ACCESS_ROLES = new Set([...ANY_DB_ROLES, "root"]);
 
 const ROLE_OPTIONS = [
   { value: "read", label: "read (single database)" },
@@ -35,6 +40,7 @@ function emptyRoleRow(): RoleAssignment {
 
 export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
   const [users, setUsers] = useState<DatabaseUserDto[] | null>(null);
+  const [databases, setDatabases] = useState<DatabaseInfoDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<{ username: string; password: string } | null>(null);
 
@@ -64,14 +70,18 @@ export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
   // so a fresh mount already has clean initial state — this just loads.
   useEffect(() => {
     load();
-  }, [load]);
+    api
+      .listDatabases(cluster._id)
+      .then(setDatabases)
+      .catch(() => setDatabases([]));
+  }, [load, cluster._id]);
 
   function updateRoleRow(index: number, patch: Partial<RoleAssignment>) {
     setRoleRows((prev) =>
       prev.map((row, i) => {
         if (i !== index) return row;
         const next = { ...row, ...patch };
-        if (ANY_DB_ROLES.has(next.role)) next.db = "admin";
+        if (FULL_ACCESS_ROLES.has(next.role)) next.db = "admin";
         return next;
       }),
     );
@@ -81,7 +91,7 @@ export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
     setError(null);
     setCreating(true);
     try {
-      const roles = roleRows.filter((r) => r.role && (r.db || ANY_DB_ROLES.has(r.role)));
+      const roles = roleRows.filter((r) => r.role && (r.db || FULL_ACCESS_ROLES.has(r.role)));
       const result = await api.createDatabaseUser(cluster._id, {
         username,
         password: password || undefined,
@@ -279,13 +289,20 @@ export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
                     </option>
                   ))}
                 </select>
-                <Input
-                  value={row.db}
-                  onChange={(e) => updateRoleRow(i, { db: e.target.value })}
-                  disabled={ANY_DB_ROLES.has(row.role)}
-                  placeholder="database name"
-                  className="h-8 w-40 text-[12px]"
-                />
+                {!FULL_ACCESS_ROLES.has(row.role) && (
+                  <select
+                    value={row.db}
+                    onChange={(e) => updateRoleRow(i, { db: e.target.value })}
+                    className="h-8 w-40 rounded-md border border-input bg-transparent px-2 text-[12px]"
+                  >
+                    <option value="">Select a database...</option>
+                    {databases?.map((db) => (
+                      <option key={db.name} value={db.name}>
+                        {db.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <Button
                   type="button"
                   variant="outline"
@@ -311,7 +328,7 @@ export function DatabaseUsersCard({ cluster }: { cluster: ClusterDto }) {
 
           <Button
             onClick={onCreate}
-            disabled={creating || !username || roleRows.every((r) => !ANY_DB_ROLES.has(r.role) && !r.db)}
+            disabled={creating || !username || roleRows.every((r) => !FULL_ACCESS_ROLES.has(r.role) && !r.db)}
             className="w-fit"
           >
             {creating ? "Creating..." : "Create user"}
